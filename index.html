@@ -129,6 +129,9 @@
             text-align: center;
             font-size: 12pt;
         }
+        .sign-table-3 td {
+            width: 33.33%;
+        }
         .sign-caption {
             text-align: left;
             font-size: 11pt;
@@ -359,16 +362,16 @@
 
                     <div class="form-row mt-3" style="background:#f8f9fa; padding:15px; border-radius:5px;">
                         <div class="form-group">
-                            <label>ผู้จัดทำ/ผู้เบิก</label>
-                            <input type="text" id="txUser" placeholder="ชื่อ-สกุล">
+                            <label>ผู้จัดทำ/ผู้เบิก/ผู้รับพัสดุ</label>
+                            <input type="text" id="txUser" placeholder="ชื่อ-สกุล (เจ้าหน้าที่)">
                         </div>
                         <div class="form-group">
-                            <label>ผู้สั่งจ่าย/ผู้อนุมัติ</label>
-                            <input type="text" id="txApprover" placeholder="ชื่อ-สกุล (ตำแหน่ง)">
+                            <label>ผู้สั่งจ่าย/ผู้อนุมัติ/หัวหน้าเจ้าหน้าที่</label>
+                            <input type="text" id="txApprover" placeholder="ชื่อ-สกุล (หัวหน้าเจ้าหน้าที่)">
                         </div>
                         <div class="form-group">
                             <label>ผู้ตรวจสอบ</label>
-                            <input type="text" id="txChecker" placeholder="ชื่อ-สกุล (ตำแหน่ง)">
+                            <input type="text" id="txChecker" placeholder="ชื่อ-สกุล (ผู้ตรวจสอบ)">
                         </div>
                     </div>
 
@@ -943,8 +946,9 @@
             DB.tx.push(tx);
             saveDB();
             
-            if (type === 'OUT' && confirm('บันทึกสำเร็จ ต้องการพิมพ์ใบเบิกหรือไม่?')) {
-                printWithdrawSlip(tx.id);
+            if (confirm('บันทึกสำเร็จ ต้องการพิมพ์เอกสารหรือไม่?')) {
+                if (type === 'IN') printReceivingSlip(tx.id);
+                else printWithdrawSlip(tx.id);
             } else {
                 showToast('บันทึกเอกสารเรียบร้อย');
             }
@@ -976,7 +980,7 @@
                         <td>${t.ref}</td>
                         <td>${t.lines.length} รายการ</td>
                         <td>
-                            <button class="btn btn-secondary btn-sm" onclick="printWithdrawSlip(${t.id})" ${t.type=='IN'?'disabled':''}><i class="fas fa-print"></i></button>
+                            <button class="btn btn-secondary btn-sm" onclick="${t.type=='IN' ? 'printReceivingSlip' : 'printWithdrawSlip'}(${t.id})"><i class="fas fa-print"></i></button>
                             <button class="btn btn-danger btn-sm" onclick="deleteTx(${t.id})"><i class="fas fa-trash"></i></button>
                         </td>
                     </tr>
@@ -1075,7 +1079,7 @@
             openPrint(html);
         }
 
-        // --- UPDATED PRINT WITHDRAW SLIP (2x2 Signatures) ---
+        // --- PRINT WITHDRAW SLIP (OUT) ---
         function printWithdrawSlip(txId) {
             const tx = DB.tx.find(t => t.id === txId);
             if (!tx) return;
@@ -1093,7 +1097,7 @@
                 `;
             });
 
-            // Using the requested signature layout
+            // 2x2 Signature Layout for Withdrawal
             const html = `
                 <div class="doc-header">${DB.orgName}<br>ใบเบิกพัสดุ</div>
                 <div class="doc-sub">
@@ -1147,6 +1151,94 @@
                             <div class="sign-line">ลงชื่อ......................................................ผู้ตรวจสอบ</div>
                             (${tx.checker || '......................................................'})<br>
                             หัวหน้าเจ้าหน้าที่<br>
+                            วันที่........./........../.............
+                        </td>
+                    </tr>
+                </table>
+            `;
+            openPrint(html);
+        }
+
+        // --- PRINT RECEIVING SLIP (IN) ---
+        function printReceivingSlip(txId) {
+            const tx = DB.tx.find(t => t.id === txId);
+            if (!tx) return;
+
+            let rows = '';
+            let grandTotal = 0;
+            tx.lines.forEach((l, idx) => {
+                const total = l.qty * l.price;
+                grandTotal += total;
+                rows += `
+                    <tr>
+                        <td class="text-center">${idx+1}</td>
+                        <td>${l.name} (${l.spec})</td>
+                        <td class="text-center">${l.qty}</td>
+                        <td class="text-right">${l.price.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                        <td class="text-right">${total.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                        <td class="text-center">${l.unit}</td>
+                        <td></td>
+                    </tr>
+                `;
+            });
+
+            // 3-Column Signature Layout for Receiving (Officer, Head, Inspector)
+            const html = `
+                <div class="doc-header">${DB.orgName}<br>ใบรับพัสดุ</div>
+                <div class="doc-sub">
+                    <div style="flex:1">
+                        <div>รายการรับพัสดุตามรายการดังต่อไปนี้</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div>เลขที่ ${tx.docNo}</div>
+                        <div>รับจาก: ${tx.ref}</div>
+                        <div>วันที่ ${getThaiDate(tx.date)}</div>
+                    </div>
+                </div>
+                
+                <table class="print-table">
+                    <thead>
+                        <tr>
+                            <th width="5%">ลำดับ</th>
+                            <th width="35%">รายการ</th>
+                            <th width="10%">จำนวน<br>รับเพิ่ม</th>
+                            <th width="15%">ราคา<br>ต่อหน่วย</th>
+                            <th width="15%">รวม</th>
+                            <th width="10%">หน่วยนับ</th>
+                            <th width="10%">หมายเหตุ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="4" class="text-right" style="font-weight:bold">รวมทั้งสิ้น</td>
+                            <td class="text-right" style="font-weight:bold">${grandTotal.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <table class="sign-table" style="border:none;">
+                    <tr>
+                        <td style="border:none !important;">
+                            <div class="sign-line">ลงชื่อ......................................................ผู้รับพัสดุ</div>
+                            (${tx.user || '......................................................'})<br>
+                            เจ้าหน้าที่<br>
+                            วันที่........./........../.............
+                        </td>
+                        <td style="border:none !important;">
+                            <div class="sign-line">ลงชื่อ......................................................</div>
+                            (${tx.approver || '......................................................'})<br>
+                            หัวหน้าเจ้าหน้าที่<br>
+                            วันที่........./........../.............
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="border:none !important; text-align:right; padding-right:50px;">
+                            <div class="sign-line">ลงชื่อ......................................................ผู้ตรวจสอบ</div>
+                            (${tx.checker || '......................................................'})<br>
                             วันที่........./........../.............
                         </td>
                     </tr>
